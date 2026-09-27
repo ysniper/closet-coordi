@@ -13,7 +13,8 @@ export type AiSettings = {
 export const emptyAiSettings: AiSettings = { provider: 'gemini' };
 
 // 모델 이름은 여기서만 바꾸면 된다.
-export const GEMINI_MODEL = 'gemini-2.5-flash';
+// Google이 옛 모델을 내리면 오류 문구에 새 모델 이름을 알려주는데, 그 경우 자동으로 한 번 더 시도한다.
+export const GEMINI_MODEL = 'gemini-3.8-flash';
 export const CLAUDE_MODEL = 'claude-opus-5';
 
 export const KEY_PAGES: Record<AiProvider, string> = {
@@ -72,7 +73,7 @@ function parseJson<T>(text: string): T {
 }
 
 // ---------- Gemini ----------
-async function askGemini(key: string, o: AskOptions): Promise<string> {
+async function askGemini(key: string, o: AskOptions, model = GEMINI_MODEL, retried = false): Promise<string> {
   const parts: object[] = [{ text: o.prompt }];
   for (const img of o.images ?? []) {
     parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
@@ -87,7 +88,7 @@ async function askGemini(key: string, o: AskOptions): Promise<string> {
   if (o.system) body.systemInstruction = { parts: [{ text: o.system }] };
 
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
@@ -95,7 +96,12 @@ async function askGemini(key: string, o: AskOptions): Promise<string> {
     }
   );
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new AiError(geminiErrorMessage(res.status, json));
+  if (!res.ok) {
+    // "이 모델은 더 이상 제공되지 않으니 models/xxx 를 쓰세요" 식의 안내가 오면 그 모델로 한 번 재시도
+    const suggested = res.status === 404 ? suggestedGeminiModel(json?.error?.message) : undefined;
+    if (suggested && !retried && suggested !== model) return askGemini(key, o, suggested, true);
+    throw new AiError(geminiErrorMessage(res.status, json));
+  }
   const text: string | undefined = json?.candidates?.[0]?.content?.parts
     ?.map((p: { text?: string }) => p.text ?? '')
     .join('');
@@ -103,8 +109,14 @@ async function askGemini(key: string, o: AskOptions): Promise<string> {
   return text;
 }
 
+function suggestedGeminiModel(message?: string): string | undefined {
+  const m = message?.match(/use models\/([a-z0-9.-]+)/i);
+  return m?.[1];
+}
+
 function geminiErrorMessage(status: number, json: { error?: { message?: string } }) {
   if (status === 400 || status === 403) return 'Gemini 키가 올바르지 않아요. 다시 확인해 주세요.';
+  if (status === 404) return 'Gemini 모델을 찾지 못했어요. 앱을 최신으로 업데이트해 주세요.';
   if (status === 429) return '무료 사용량을 잠시 넘었어요. 1분 뒤 다시 시도해 주세요.';
   return `Gemini 오류 (${status}): ${json?.error?.message ?? '알 수 없음'}`;
 }
