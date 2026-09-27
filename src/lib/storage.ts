@@ -2,12 +2,14 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useCallback, useEffect, useState } from 'react';
 
+import { AiSettings, emptyAiSettings } from './ai/client';
 import { ClothingItem, Outfit, Profile, emptyProfile } from './types';
 
 const KEYS = {
   profile: 'closet/profile',
   clothes: 'closet/clothes',
   outfits: 'closet/outfits',
+  ai: 'closet/ai',
 } as const;
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
@@ -38,6 +40,10 @@ export const saveClothes = (items: ClothingItem[]) => writeJson(KEYS.clothes, it
 // ---- 저장한 코디 ----
 export const loadOutfits = () => readJson<Outfit[]>(KEYS.outfits, []);
 export const saveOutfits = (items: Outfit[]) => writeJson(KEYS.outfits, items);
+
+// ---- AI 연결 설정 (키 포함, 이 기기에만 저장) ----
+export const loadAiSettings = () => readJson<AiSettings>(KEYS.ai, emptyAiSettings);
+export const saveAiSettings = (s: AiSettings) => writeJson(KEYS.ai, s);
 
 /**
  * 화면에서 쓰기 편한 훅. 화면이 열릴 때 읽어오고, 바꾸면 바로 저장한다.
@@ -76,3 +82,4 @@ export function useStoredValue<T>(load: () => Promise<T>, save: (v: T) => Promis
 export const useProfile = () => useStoredValue(loadProfile, saveProfile, emptyProfile);
 export const useClothes = () => useStoredValue<ClothingItem[]>(loadClothes, saveClothes, []);
 export const useOutfits = () => useStoredValue<Outfit[]>(loadOutfits, saveOutfits, []);
+export const useAiSettings = () => useStoredValue(loadAiSettings, saveAiSettings, emptyAiSettings);

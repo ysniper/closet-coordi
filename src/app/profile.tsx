@@ -1,16 +1,38 @@
-// 내 정보: 키, 몸무게, 성별, 선호 스타일(사진 + 버튼)
+// 내 정보: 키, 몸무게, 성별, 선호 스타일(사진 + 버튼), AI 연결
 import { Image } from 'expo-image';
+import { useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
+import { AiSettingsCard } from '@/components/ai-settings-card';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Chips, Hint, Input, Row, Screen, SectionTitle } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
+import { isAiReady } from '@/lib/ai/client';
+import { summarizeStyle } from '@/lib/ai/tasks';
+import { toAiImage } from '@/lib/images';
 import { pickPhoto, takePhoto } from '@/lib/photos';
-import { useProfile } from '@/lib/storage';
+import { useAiSettings, useProfile } from '@/lib/storage';
 import { STYLES, StyleTag } from '@/lib/types';
 
 export default function ProfileScreen() {
   const [profile, setProfile] = useProfile();
+  const [ai, setAi] = useAiSettings();
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const analyzeStyle = async () => {
+    if (!isAiReady(ai)) return Alert.alert('AI를 먼저 연결해 주세요', '아래 "AI 연결"에서 키를 넣어 주세요.');
+    if (profile.styleReferenceUris.length === 0) return Alert.alert('스타일 사진을 먼저 올려 주세요');
+    setAnalyzing(true);
+    try {
+      const images = await Promise.all(profile.styleReferenceUris.slice(0, 6).map((u) => toAiImage(u, 768)));
+      const summary = await summarizeStyle(ai, images);
+      setProfile((p) => ({ ...p, styleSummary: summary }));
+    } catch (e) {
+      Alert.alert('분석에 실패했어요', (e as Error).message);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const setNumber = (key: 'heightCm' | 'weightKg') => (text: string) => {
     const n = Number(text.replace(/[^\d.]/g, ''));
@@ -99,15 +121,20 @@ export default function ProfileScreen() {
         </Row>
         {profile.styleSummary ? (
           <ThemedText type="small">AI가 읽은 내 취향: {profile.styleSummary}</ThemedText>
-        ) : (
-          <Hint>AI 스타일 분석은 다음 단계에서 연결돼요.</Hint>
-        )}
+        ) : null}
+        <Button
+          title={analyzing ? 'AI가 보는 중...' : profile.styleSummary ? 'AI로 다시 분석' : 'AI로 내 취향 분석'}
+          onPress={analyzeStyle}
+          disabled={analyzing}
+        />
       </Card>
 
       <Card>
         <SectionTitle>선호 스타일 (빠르게 고르기)</SectionTitle>
         <Chips options={STYLES} selected={profile.styleTags} onToggle={toggleStyle} />
       </Card>
+
+      <AiSettingsCard settings={ai} onChange={setAi} />
     </Screen>
   );
 }
