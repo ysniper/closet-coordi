@@ -32,6 +32,12 @@ export type ClothingItem = {
   material?: string;
   brand?: string;
   size?: string;
+  /** 택의 모델명/품번 (예: 422234-01) */
+  modelNo?: string;
+  /** 검색으로 찾은 정식 제품명 */
+  productName?: string;
+  /** 정가 (검색 또는 가격표) */
+  price?: string;
   seasons: Season[];
   /** 두께: 1(얇음) ~ 3(두꺼움) */
   thickness: 1 | 2 | 3;

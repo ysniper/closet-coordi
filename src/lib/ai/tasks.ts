@@ -23,6 +23,9 @@ export type ClothingGuess = {
   material?: string;
   brand?: string;
   size?: string;
+  modelNo?: string;
+  productName?: string;
+  price?: string;
   seasons?: Season[];
   thickness?: 1 | 2 | 3;
   occasions?: string[];
@@ -34,14 +37,24 @@ export async function classifyClothing(
   photo: ImagePayload,
   tagPhoto?: ImagePayload
 ): Promise<ClothingGuess> {
-  const prompt = `첫 번째 사진은 옷 사진${tagPhoto ? ', 두 번째 사진은 그 옷의 택(라벨)입니다' : '입니다'}.
-옷 정보를 아래 JSON 형식으로만 답하세요. 모르는 항목은 null.
+  const prompt = `첫 번째 사진은 옷 사진${tagPhoto ? ', 두 번째 사진은 그 옷의 택(케어 라벨 또는 가격표)입니다' : '입니다'}.
+${
+  tagPhoto
+    ? `택에 브랜드명, 모델명/품번(숫자·영문 코드), 사이즈, 소재, 가격이 보이면 그대로 읽으세요.
+모델명이나 품번이 보이면 인터넷에서 "브랜드 + 모델명"으로 검색해 정식 제품명, 소재, 정가를 찾아 채우세요.
+검색으로 확실히 찾지 못한 항목은 지어내지 말고 null로 두세요.
+`
+    : ''
+}옷 정보를 아래 JSON 형식으로만 답하세요. 모르는 항목은 null.
 {
   "category": ${JSON.stringify(CATEGORIES)} 중 하나,
   "color": "대표 색상 한두 단어 (예: 네이비, 연한 베이지)",
   "material": "소재 (택에 있으면 그대로, 없으면 사진으로 추정)",
   "brand": "브랜드 (택에 보이면)",
   "size": "사이즈 (택에 보이면, 예: L, 100, 32)",
+  "modelNo": "택의 모델명/품번 (보이면 그대로)",
+  "productName": "검색으로 찾은 정식 제품명 (예: 에어리즘 코튼 오버사이즈 티셔츠)",
+  "price": "정가 (예: 29,900원)",
   "seasons": ${JSON.stringify(SEASONS)} 중 어울리는 것들의 배열,
   "thickness": 1(얇음) | 2(보통) | 3(두꺼움),
   "occasions": ${JSON.stringify(OCCASIONS)} 중 어울리는 상황들의 배열,
@@ -52,7 +65,9 @@ export async function classifyClothing(
     system: SYSTEM,
     prompt,
     images: tagPhoto ? [photo, tagPhoto] : [photo],
-    maxTokens: 600,
+    // 택이 있을 때만 검색을 켠다 (검색은 시간이 더 걸림)
+    search: !!tagPhoto,
+    maxTokens: 800,
   });
   return sanitizeGuess(raw);
 }
@@ -70,6 +85,9 @@ function sanitizeGuess(r: Record<string, unknown>): ClothingGuess {
     material: str(r.material),
     brand: str(r.brand),
     size: str(r.size),
+    modelNo: str(r.modelNo),
+    productName: str(r.productName),
+    price: str(r.price),
     seasons: listOf(SEASONS, r.seasons),
     thickness: t === 1 || t === 2 || t === 3 ? t : undefined,
     occasions: listOf(OCCASIONS, r.occasions),
@@ -96,6 +114,7 @@ function describeCloset(clothes: ClothingItem[]) {
       (c) =>
         `- id:${c.id} | ${c.category} | ${c.color}${c.material ? ` | ${c.material}` : ''}${
           c.brand ? ` | ${c.brand}` : ''
+        }${c.productName ? ` | ${c.productName}` : ''
         } | 계절:${c.seasons.join('/') || '무관'} | 두께:${c.thickness}${
           c.occasions.length ? ` | 상황:${c.occasions.join('/')}` : ''
         }${c.note ? ` | ${c.note}` : ''}`

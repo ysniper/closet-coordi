@@ -81,6 +81,9 @@ export default function ClosetScreen() {
             <Detail label="브랜드" value={selected.brand} />
             <Detail label="사이즈" value={selected.size} />
             <Detail label="소재" value={selected.material} />
+            <Detail label="제품명" value={selected.productName} />
+            <Detail label="모델명" value={selected.modelNo} />
+            <Detail label="정가" value={selected.price} />
             <Detail label="계절" value={selected.seasons.join(', ')} />
             <Detail label="두께" value={['얇음', '보통', '두꼼'][selected.thickness - 1]} />
             <Detail label="어울리는 상황" value={selected.occasions.join(', ')} />

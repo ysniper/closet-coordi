@@ -27,6 +27,9 @@ export default function AddScreen() {
   const [material, setMaterial] = useState('');
   const [brand, setBrand] = useState('');
   const [size, setSize] = useState('');
+  const [modelNo, setModelNo] = useState('');
+  const [productName, setProductName] = useState('');
+  const [price, setPrice] = useState('');
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [thickness, setThickness] = useState<1 | 2 | 3>(2);
   const [occasions, setOccasions] = useState<string[]>([]);
@@ -42,6 +45,9 @@ export default function AddScreen() {
     if (g.material) setMaterial(g.material);
     if (g.brand) setBrand(g.brand);
     if (g.size) setSize(g.size);
+    if (g.modelNo) setModelNo(g.modelNo);
+    if (g.productName) setProductName(g.productName);
+    if (g.price) setPrice(g.price);
     if (g.seasons?.length) setSeasons(g.seasons);
     if (g.thickness) setThickness(g.thickness);
     if (g.occasions?.length) setOccasions(g.occasions);
@@ -83,6 +89,9 @@ export default function AddScreen() {
     setMaterial('');
     setBrand('');
     setSize('');
+    setModelNo('');
+    setProductName('');
+    setPrice('');
     setSeasons([]);
     setThickness(2);
     setOccasions([]);
@@ -105,6 +114,9 @@ export default function AddScreen() {
         material: material.trim() || undefined,
         brand: brand.trim() || undefined,
         size: size.trim() || undefined,
+        modelNo: modelNo.trim() || undefined,
+        productName: productName.trim() || undefined,
+        price: price.trim() || undefined,
         seasons,
         thickness,
         occasions,
@@ -142,7 +154,7 @@ export default function AddScreen() {
         ) : (
           <Hint>
             브랜드, 사이즈, 소재가 적힌 택을 찍어 주세요. 기존 옷은 안쪽 케어 라벨, 새 옷은 가격표 택이면
-            돼요.
+            돼요. 모델명이 보이면 AI가 인터넷에서 제품명과 정가까지 찾아 채워요.
           </Hint>
         )}
         <Row>
@@ -161,7 +173,7 @@ export default function AddScreen() {
           aiBusy ? (
             <View style={styles.row}>
               <ActivityIndicator />
-              <Hint>AI가 사진을 보고 있어요...</Hint>
+              <Hint>{tagPhotoUri ? 'AI가 택을 읽고 제품을 검색하고 있어요...' : 'AI가 사진을 보고 있어요...'}</Hint>
             </View>
           ) : (
             <>
@@ -200,6 +212,18 @@ export default function AddScreen() {
         </Row>
         <Hint>소재</Hint>
         <Input placeholder="예: 면 100%" value={material} onChangeText={setMaterial} />
+        <Hint>제품명 (택을 찍으면 검색해서 채워요)</Hint>
+        <Input placeholder="예: 에어리즘 코튼 오버사이즈 티셔츠" value={productName} onChangeText={setProductName} />
+        <Row>
+          <View style={styles.half}>
+            <Hint>모델명/품번</Hint>
+            <Input placeholder="예: 422234" value={modelNo} onChangeText={setModelNo} autoCapitalize="characters" />
+          </View>
+          <View style={styles.half}>
+            <Hint>정가</Hint>
+            <Input placeholder="예: 29,900원" value={price} onChangeText={setPrice} />
+          </View>
+        </Row>
         <Hint>계절</Hint>
         <Chips options={SEASONS} selected={seasons} onToggle={(s) => setSeasons(toggle(seasons, s))} />
         <Hint>두께</Hint>

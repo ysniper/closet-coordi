@@ -40,8 +40,12 @@ type AskOptions = {
   images?: ImagePayload[];
   /** true면 JSON만 답하도록 요청 */
   json?: boolean;
+  /** true면 AI가 인터넷 검색(구글 검색/웹 검색)을 써서 답한다 */
+  search?: boolean;
   maxTokens?: number;
 };
+
+const JSON_ONLY = '\n\n반드시 JSON만 출력하세요. 설명 문장이나 코드 블록 없이.';
 
 /** 텍스트(+사진)를 보내고 답 텍스트를 받는다 */
 export async function askAi(o: AskOptions): Promise<string> {
@@ -74,7 +78,9 @@ function parseJson<T>(text: string): T {
 
 // ---------- Gemini ----------
 async function askGemini(key: string, o: AskOptions, model = GEMINI_MODEL, retried = false): Promise<string> {
-  const parts: object[] = [{ text: o.prompt }];
+  // 검색 도구를 켜면 JSON 전용 모드는 같이 못 쓰므로, 그때는 문장으로 JSON만 달라고 부탁한다
+  const useJsonMode = !!o.json && !o.search;
+  const parts: object[] = [{ text: o.json && !useJsonMode ? o.prompt + JSON_ONLY : o.prompt }];
   for (const img of o.images ?? []) {
     parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
   }
@@ -85,10 +91,11 @@ async function askGemini(key: string, o: AskOptions, model = GEMINI_MODEL, retri
     contents: [{ role: 'user', parts }],
     generationConfig: {
       maxOutputTokens: Math.max(wanted, 1024) + 4096,
-      ...(o.json ? { responseMimeType: 'application/json' } : {}),
+      ...(useJsonMode ? { responseMimeType: 'application/json' } : {}),
     },
   };
   if (o.system) body.systemInstruction = { parts: [{ text: o.system }] };
+  if (o.search) body.tools = [{ google_search: {} }];
 
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
@@ -103,6 +110,8 @@ async function askGemini(key: string, o: AskOptions, model = GEMINI_MODEL, retri
     // "이 모델은 더 이상 제공되지 않으니 models/xxx 를 쓰세요" 식의 안내가 오면 그 모델로 한 번 재시도
     const suggested = res.status === 404 ? suggestedGeminiModel(json?.error?.message) : undefined;
     if (suggested && !retried && suggested !== model) return askGemini(key, o, suggested, true);
+    // 검색 도구 때문에 거절되면(키 종류/지역 제한 등) 검색 없이 한 번 더 시도
+    if (o.search && res.status === 400) return askGemini(key, { ...o, search: false }, model, retried);
     throw new AiError(geminiErrorMessage(res.status, json));
   }
   const candidate = json?.candidates?.[0];
@@ -146,7 +155,7 @@ async function askClaude(key: string, o: AskOptions): Promise<string> {
   }
   content.push({
     type: 'text',
-    text: o.json ? `${o.prompt}\n\n반드시 JSON만 출력하세요. 설명 문장이나 코드 블록 없이.` : o.prompt,
+    text: o.json ? o.prompt + JSON_ONLY : o.prompt,
   });
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
@@ -162,6 +171,7 @@ async function askClaude(key: string, o: AskOptions): Promise<string> {
       model: CLAUDE_MODEL,
       max_tokens: o.maxTokens ?? 2048,
       ...(o.system ? { system: o.system } : {}),
+      ...(o.search ? { tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }] } : {}),
       messages: [{ role: 'user', content }],
     }),
   });
