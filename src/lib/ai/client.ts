@@ -78,10 +78,13 @@ async function askGemini(key: string, o: AskOptions, model = GEMINI_MODEL, retri
   for (const img of o.images ?? []) {
     parts.push({ inlineData: { mimeType: img.mimeType, data: img.base64 } });
   }
+  // 최신 Gemini는 답하기 전에 "생각" 토큰을 먼저 쓰고, 그것도 출력 한도에 포함된다.
+  // 한도를 너무 작게 주면 생각만 하다 끝나서 답이 비어 오므로 넉넉하게 준다.
+  const wanted = o.maxTokens ?? 2048;
   const body: Record<string, unknown> = {
     contents: [{ role: 'user', parts }],
     generationConfig: {
-      maxOutputTokens: o.maxTokens ?? 2048,
+      maxOutputTokens: Math.max(wanted, 1024) + 4096,
       ...(o.json ? { responseMimeType: 'application/json' } : {}),
     },
   };
@@ -102,11 +105,22 @@ async function askGemini(key: string, o: AskOptions, model = GEMINI_MODEL, retri
     if (suggested && !retried && suggested !== model) return askGemini(key, o, suggested, true);
     throw new AiError(geminiErrorMessage(res.status, json));
   }
-  const text: string | undefined = json?.candidates?.[0]?.content?.parts
-    ?.map((p: { text?: string }) => p.text ?? '')
+  const candidate = json?.candidates?.[0];
+  const text: string | undefined = candidate?.content?.parts
+    // thought: true 인 파트는 모델의 "생각"이라 답에서 뺀다
+    ?.filter((p: { thought?: boolean }) => !p.thought)
+    .map((p: { text?: string }) => p.text ?? '')
     .join('');
-  if (!text) throw new AiError('AI가 답을 주지 않았어요. 다시 시도해 주세요.');
+  if (!text) throw new AiError(geminiEmptyMessage(candidate?.finishReason, json?.promptFeedback?.blockReason));
   return text;
+}
+
+function geminiEmptyMessage(finishReason?: string, blockReason?: string) {
+  if (blockReason || finishReason === 'SAFETY' || finishReason === 'PROHIBITED_CONTENT')
+    return 'Gemini가 이 요청을 안전 문제로 거절했어요. 다른 사진이나 문구로 다시 시도해 주세요.';
+  if (finishReason === 'MAX_TOKENS') return 'AI 답이 너무 길어져 잘렸어요. 다시 시도해 주세요.';
+  if (finishReason === 'RECITATION') return 'Gemini가 저작권 문제로 답을 멈췄어요. 다시 시도해 주세요.';
+  return `AI가 답을 주지 않았어요. 다시 시도해 주세요.${finishReason ? ` (사유: ${finishReason})` : ''}`;
 }
 
 function suggestedGeminiModel(message?: string): string | undefined {

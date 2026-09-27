@@ -185,5 +185,5 @@ JSON 형식으로만:
 
 /** 키가 제대로 되는지 아주 작은 요청으로 확인 */
 export async function testConnection(settings: AiSettings): Promise<void> {
-  await askAi({ settings, prompt: '연결 확인. "OK"라고만 답하세요.', maxTokens: 10 });
+  await askAi({ settings, prompt: '연결 확인. "OK"라고만 답하세요.', maxTokens: 64 });
 }
