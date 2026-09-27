@@ -1,4 +1,4 @@
-// 오늘의 코디: 날씨 + 오늘 상황 → 내 옷장으로 코디 추천
+// 오늘의 코디: 날씨 + 오늘 상황 → 내 옷장으로 코디 추천 (AI 연결 시 AI, 아니면 규칙)
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
 
@@ -6,8 +6,10 @@ import { ClothingThumb } from '@/components/clothing-thumb';
 import { ThemedText } from '@/components/themed-text';
 import { Button, Card, Chips, Hint, Input, Screen, SectionTitle } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
+import { isAiReady } from '@/lib/ai/client';
+import { recommendOutfitsAi } from '@/lib/ai/tasks';
 import { WeatherNow, recommendOutfits } from '@/lib/recommend';
-import { useClothes, useOutfits, useProfile } from '@/lib/storage';
+import { useAiSettings, useClothes, useOutfits, useProfile } from '@/lib/storage';
 import { OCCASIONS, Outfit } from '@/lib/types';
 import { getCurrentWeather } from '@/lib/weather';
 
@@ -15,6 +17,7 @@ export default function TodayScreen() {
   const [clothes] = useClothes();
   const [profile] = useProfile();
   const [saved, setSaved] = useOutfits();
+  const [ai] = useAiSettings();
 
   const [weather, setWeather] = useState<WeatherNow>();
   const [weatherError, setWeatherError] = useState<string>();
@@ -22,6 +25,8 @@ export default function TodayScreen() {
   const [customOccasion, setCustomOccasion] = useState('');
   const [outfits, setOutfits] = useState<Outfit[]>([]);
   const [round, setRound] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [source, setSource] = useState<'ai' | 'rule'>();
 
   const loadWeather = () => {
     setWeatherError(undefined);
@@ -32,7 +37,7 @@ export default function TodayScreen() {
   };
   useEffect(loadWeather, []);
 
-  const recommend = () => {
+  const recommend = async () => {
     if (clothes.length < 2) {
       Alert.alert('옷을 조금 더 등록해 주세요', '상의와 하의가 최소 한 벌씩 있어야 코디를 만들 수 있어요.');
       return;
@@ -44,11 +49,28 @@ export default function TodayScreen() {
       summary: '날씨 정보 없음 (20°로 가정)',
     };
     const finalOccasion = customOccasion.trim() || occasion;
-    const next = recommendOutfits(clothes, w, finalOccasion, profile, 3);
+
+    setBusy(true);
+    let next: Outfit[] = [];
+    let from: 'ai' | 'rule' = 'rule';
+    try {
+      if (isAiReady(ai)) {
+        next = await recommendOutfitsAi(ai, clothes, w, finalOccasion, profile, 3);
+        from = 'ai';
+      }
+    } catch (e) {
+      Alert.alert('AI 추천에 실패해서 기본 추천으로 보여 드려요', (e as Error).message);
+    }
+    if (next.length === 0) {
+      next = recommendOutfits(clothes, w, finalOccasion, profile, 3);
+      from = 'rule';
+    }
+    setBusy(false);
     if (next.length === 0) {
       Alert.alert('맞는 옷을 못 찾았어요', '이 날씨에 맞는 상의와 하의가 옷장에 있는지 확인해 주세요.');
     }
     setOutfits(next);
+    setSource(from);
     setRound((r) => r + 1);
   };
 
@@ -87,7 +109,11 @@ export default function TodayScreen() {
         />
       </Card>
 
-      <Button title={round === 0 ? '코디 추천받기' : '다른 코디 보여줘'} onPress={recommend} />
+      <Button
+        title={busy ? 'AI가 코디 중...' : round === 0 ? '코디 추천받기' : '다른 코디 보여줘'}
+        onPress={recommend}
+        disabled={busy}
+      />
 
       {outfits.map((o, i) => (
         <Card key={o.id}>
@@ -108,10 +134,11 @@ export default function TodayScreen() {
         </Card>
       ))}
 
-      {round > 0 && (
+      {round > 0 && source === 'rule' && (
         <Hint>
-          지금은 날씨와 상황만 보고 규칙으로 고르고 있어요. 다음 단계에서 AI가 선호 스타일과 옷장 분석까지
-          함께 보고 추천해요.
+          {isAiReady(ai)
+            ? '지금은 날씨와 상황만 보고 규칙으로 골랐어요.'
+            : '지금은 날씨와 상황만 보고 규칙으로 고르고 있어요. "내 정보"에서 AI를 연결하면 선호 스타일과 옷장 분석까지 함께 보고 추천해요.'}
         </Hint>
       )}
     </Screen>

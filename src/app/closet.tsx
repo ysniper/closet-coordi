@@ -8,7 +8,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Button, Card, Chips, Hint, Screen, SectionTitle } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
-import { useClothes } from '@/lib/storage';
+import { isAiReady } from '@/lib/ai/client';
+import { analyzeCloset } from '@/lib/ai/tasks';
+import { useAiSettings, useClothes, useProfile } from '@/lib/storage';
 import { CATEGORIES, Category, ClothingItem } from '@/lib/types';
 
 type Tab = '옷 목록' | '옷장 분석';
@@ -82,6 +84,7 @@ export default function ClosetScreen() {
             <Detail label="계절" value={selected.seasons.join(', ')} />
             <Detail label="두께" value={['얇음', '보통', '두꼼'][selected.thickness - 1]} />
             <Detail label="어울리는 상황" value={selected.occasions.join(', ')} />
+            <Detail label="메모" value={selected.note} />
             {selected.tagPhotoUri && (
               <Pressable>
                 <Image source={{ uri: selected.tagPhotoUri }} style={styles.tagImage} />
@@ -109,8 +112,24 @@ function Detail({ label, value }: { label: string; value?: string }) {
   );
 }
 
-/** 옷장 분석: 지금은 간단한 통계. 다음 단계에서 AI가 취향 해석을 덧붙인다. */
+/** 옷장 분석: 간단한 통계 + AI 취향 해석 */
 function Analysis({ clothes }: { clothes: ClothingItem[] }) {
+  const [profile, setProfile] = useProfile();
+  const [ai] = useAiSettings();
+  const [busy, setBusy] = useState(false);
+
+  const runInsight = async () => {
+    setBusy(true);
+    try {
+      const text = await analyzeCloset(ai, clothes, profile);
+      setProfile((p) => ({ ...p, closetInsight: text, closetInsightAt: new Date().toISOString() }));
+    } catch (e) {
+      Alert.alert('분석에 실패했어요', (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (clothes.length === 0) {
     return (
       <Card>
@@ -130,17 +149,34 @@ function Analysis({ clothes }: { clothes: ClothingItem[] }) {
 
   return (
     <>
+      <Card>
+        <SectionTitle>AI 취향 해석</SectionTitle>
+        {profile.closetInsight ? (
+          <>
+            <ThemedText type="small">{profile.closetInsight}</ThemedText>
+            {profile.closetInsightAt && (
+              <Hint>{new Date(profile.closetInsightAt).toLocaleDateString('ko-KR')} 기준</Hint>
+            )}
+          </>
+        ) : (
+          <Hint>
+            실제로 가진 옷의 경향, 말한 취향과 다른 점, 부족한 아이템을 AI가 짚어 줘요.
+            {isAiReady(ai) ? '' : ' "내 정보"에서 AI를 먼저 연결해 주세요.'}
+          </Hint>
+        )}
+        {isAiReady(ai) && (
+          <Button
+            title={busy ? 'AI가 보는 중...' : profile.closetInsight ? '다시 분석' : 'AI로 분석하기'}
+            kind={profile.closetInsight ? 'secondary' : 'primary'}
+            onPress={runInsight}
+            disabled={busy}
+          />
+        )}
+      </Card>
       <Stat title="많이 가진 색상" rows={colors} />
       <Stat title="종류별" rows={cats} />
       <Stat title="계절별" rows={seasons} />
       {brands.length > 0 && <Stat title="자주 사는 브랜드" rows={brands} />}
-      <Card>
-        <SectionTitle>AI 취향 해석</SectionTitle>
-        <Hint>
-          "미니멀을 좋아한다고 하셨는데 실제론 패턴 셔츠가 많아요" 같은 해석은 다음 단계에서 AI를 연결하면
-          여기 나타나요.
-        </Hint>
-      </Card>
     </>
   );
 }

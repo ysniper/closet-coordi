@@ -55,6 +55,9 @@ export type Profile = {
   styleSummary?: string;
   /** 날씨용 지역 이름 */
   regionName?: string;
+  /** AI가 옷장을 보고 정리한 해석 (옷장 분석 탭) */
+  closetInsight?: string;
+  closetInsightAt?: string;
 };
 
 /** 코디 추천 하나 */
