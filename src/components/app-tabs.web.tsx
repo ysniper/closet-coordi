@@ -28,6 +28,9 @@ export default function AppTabs() {
           <TabTrigger name="add" href="/add" asChild>
             <TabButton>등록</TabButton>
           </TabTrigger>
+          <TabTrigger name="shop" href="/shop" asChild>
+            <TabButton>쇼핑</TabButton>
+          </TabTrigger>
           <TabTrigger name="saved" href="/saved" asChild>
             <TabButton>저장</TabButton>
           </TabTrigger>

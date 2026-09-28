@@ -64,6 +64,17 @@ export type Profile = {
   /** AI가 옷장을 보고 정리한 해석 (옷장 분석 탭) */
   closetInsight?: string;
   closetInsightAt?: string;
+  /** AI가 제안한 "다음에 사면 좋을 옷" (옷장 분석 탭) */
+  buySuggestions?: BuySuggestion[];
+  buySuggestionsAt?: string;
+};
+
+/** 사면 좋을 옷 제안 하나 */
+export type BuySuggestion = {
+  /** 예: 베이지 치노 팬츠 */
+  item: string;
+  /** 왜 필요한지 + 어떤 코디가 늘어나는지 */
+  reason: string;
 };
 
 /** 코디 추천 하나 */

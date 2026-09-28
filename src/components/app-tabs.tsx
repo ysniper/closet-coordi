@@ -10,6 +10,7 @@ const TABS: { name: string; label: string; icon: IconName }[] = [
   { name: 'index', label: '오늘', icon: 'weather-partly-cloudy' },
   { name: 'closet', label: '옷장', icon: 'hanger' },
   { name: 'add', label: '등록', icon: 'camera-plus' },
+  { name: 'shop', label: '쇼핑', icon: 'shopping-outline' },
   { name: 'saved', label: '저장', icon: 'heart' },
   { name: 'profile', label: '내 정보', icon: 'account' },
 ];

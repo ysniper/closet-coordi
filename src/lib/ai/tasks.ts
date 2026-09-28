@@ -4,6 +4,7 @@ import { ImagePayload } from '../images';
 import { WeatherNow } from '../recommend';
 import { newId } from '../storage';
 import {
+  BuySuggestion,
   CATEGORIES,
   Category,
   ClothingItem,
@@ -205,4 +206,128 @@ JSON 형식으로만:
 /** 키가 제대로 되는지 아주 작은 요청으로 확인 */
 export async function testConnection(settings: AiSettings): Promise<void> {
   await askAi({ settings, prompt: '연결 확인. "OK"라고만 답하세요.', maxTokens: 64 });
+}
+
+// ---------- 쇼핑 도우미 ----------
+
+export const VERDICTS = ['사세요', '고민해 보세요', '안 사도 돼요'] as const;
+export type Verdict = (typeof VERDICTS)[number];
+
+/** 새 옷 가격표 택을 보고 내린 판단 */
+export type ShoppingVerdict = {
+  /** 택에서 읽고 검색으로 보강한 옷 정보 */
+  item: ClothingGuess;
+  verdict: Verdict;
+  /** 한두 문장 총평 */
+  summary: string;
+  /** 사이즈가 맞을지 (같은 브랜드 보유 사이즈, 키·몸무게 기준) */
+  sizeCheck: string;
+  /** 이미 비슷한 옷이 있는지 */
+  overlapIds: string[];
+  overlapNote: string;
+  /** 이 옷을 사면 만들 수 있는 코디 (기존 옷 id들) */
+  outfits: { itemIds: string[]; reason: string }[];
+};
+
+export async function judgeNewItem(
+  settings: AiSettings,
+  tagPhoto: ImagePayload,
+  clothes: ClothingItem[],
+  profile: Profile,
+  productPhoto?: ImagePayload
+): Promise<ShoppingVerdict> {
+  const raw = await askAiJson<Record<string, unknown>>({
+    settings,
+    system: SYSTEM,
+    prompt: `사용자가 매장에서 새 옷을 살지 고민 중입니다. 입어 보지 않고도 결정할 수 있게 도와주세요.
+첫 번째 사진은 그 옷의 가격표 택${productPhoto ? ', 두 번째 사진은 옷 자체' : ''}입니다.
+
+1단계: 택에서 브랜드, 모델명/품번, 사이즈, 가격, 소재를 읽으세요. 모델명이 있으면 인터넷에서 "브랜드 + 모델명"을 검색해
+정식 제품명, 종류, 색상, 소재, 핏(슬림/레귤러/오버)을 확인하세요. 확실하지 않은 값은 null.
+
+2단계: 아래 사용자 정보와 옷장을 보고 판단하세요.
+- 사이즈: 같은 브랜드의 보유 옷 사이즈가 있으면 그것과 비교, 없으면 키·몸무게와 브랜드 사이즈표(검색)로 추정.
+- 겹침: 옷장에 종류·색·용도가 비슷한 옷이 있으면 그 id를 적으세요.
+- 코디: 이 옷을 사면 기존 옷과 만들 수 있는 코디 2~3개 (반드시 옷장 목록의 id만 사용). 새 옷 자체는 id 없이 reason에 언급.
+- 결론: ${JSON.stringify(VERDICTS)} 중 하나. 겹치는 옷이 많고 코디가 안 늘면 "안 사도 돼요", 사이즈가 불확실하면 "고민해 보세요".
+
+사용자 정보:
+${describeProfile(profile)}
+
+옷장 목록:
+${describeCloset(clothes) || '(아직 등록된 옷 없음)'}
+
+JSON 형식으로만 답하세요:
+{
+  "item": {
+    "category": ${JSON.stringify(CATEGORIES)} 중 하나,
+    "color": "색상", "material": "소재", "brand": "브랜드", "size": "택의 사이즈",
+    "modelNo": "모델명/품번", "productName": "정식 제품명", "price": "가격 (예: 59,000원)",
+    "seasons": ${JSON.stringify(SEASONS)} 배열, "thickness": 1|2|3,
+    "occasions": ${JSON.stringify(OCCASIONS)} 배열, "note": "한 줄 특징"
+  },
+  "verdict": "사세요" | "고민해 보세요" | "안 사도 돼요",
+  "summary": "총평 한두 문장",
+  "sizeCheck": "사이즈 판단 한두 문장 (근거 포함)",
+  "overlapIds": ["겹치는 옷 id"],
+  "overlapNote": "겹침 설명 한 문장 (없으면 '겹치는 옷 없음')",
+  "outfits": [{"itemIds": ["id"], "reason": "새 옷 + 이 옷들로 어떤 코디가 되는지"}]
+}`,
+    images: productPhoto ? [tagPhoto, productPhoto] : [tagPhoto],
+    search: true,
+    maxTokens: 1200,
+  });
+
+  const valid = new Set(clothes.map((c) => c.id));
+  const ids = (v: unknown) =>
+    Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && valid.has(x)) : [];
+  const str = (v: unknown, fallback = '') => (typeof v === 'string' && v.trim() ? v.trim() : fallback);
+  const verdict = (VERDICTS as readonly string[]).includes(str(raw.verdict))
+    ? (raw.verdict as Verdict)
+    : '고민해 보세요';
+  const outfits = Array.isArray(raw.outfits)
+    ? raw.outfits
+        .map((o: { itemIds?: unknown; reason?: unknown }) => ({ itemIds: ids(o?.itemIds), reason: str(o?.reason) }))
+        .filter((o) => o.itemIds.length > 0)
+    : [];
+  return {
+    item: sanitizeGuess((raw.item as Record<string, unknown>) ?? {}),
+    verdict,
+    summary: str(raw.summary, '판단 근거를 받지 못했어요.'),
+    sizeCheck: str(raw.sizeCheck, '사이즈를 판단할 정보가 부족해요.'),
+    overlapIds: ids(raw.overlapIds),
+    overlapNote: str(raw.overlapNote, '겹치는 옷 없음'),
+    outfits,
+  };
+}
+
+/** 다음에 사면 좋을 옷 제안 (옷장 빈틈 채우기) */
+export async function suggestPurchases(
+  settings: AiSettings,
+  clothes: ClothingItem[],
+  profile: Profile
+): Promise<BuySuggestion[]> {
+  const raw = await askAiJson<{ suggestions?: { item?: unknown; reason?: unknown }[] }>({
+    settings,
+    system: SYSTEM,
+    prompt: `사용자 정보:
+${describeProfile(profile)}
+
+옷장 목록:
+${describeCloset(clothes)}
+
+이 옷장에 추가하면 코디 가짓수가 가장 많이 늘어나는 옷 3개를 골라 주세요.
+이미 많이 가진 종류·색은 피하고, 사용자의 선호 스타일과 실제 옷장 경향에 맞게.
+각 제안은 구체적으로 (종류 + 색 + 핏, 예: "차콜 슬림 슬랙스"), 이유에는 옷장의 어떤 옷들과 어떻게 매치되는지 적으세요.
+JSON 형식으로만:
+{"suggestions":[{"item":"베이지 치노 팬츠","reason":"네이비 셔츠, 흰 티와 모두 맞고 출근·데이트 둘 다 가능"}]}`,
+    maxTokens: 700,
+  });
+  return (raw.suggestions ?? [])
+    .map((s) => ({
+      item: typeof s.item === 'string' ? s.item.trim() : '',
+      reason: typeof s.reason === 'string' ? s.reason.trim() : '',
+    }))
+    .filter((s) => s.item)
+    .slice(0, 3);
 }

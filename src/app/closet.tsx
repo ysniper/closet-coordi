@@ -9,7 +9,7 @@ import { ThemedView } from '@/components/themed-view';
 import { Button, Card, Chips, Hint, Screen, SectionTitle } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { isAiReady } from '@/lib/ai/client';
-import { analyzeCloset } from '@/lib/ai/tasks';
+import { analyzeCloset, suggestPurchases } from '@/lib/ai/tasks';
 import { useAiSettings, useClothes, useProfile } from '@/lib/storage';
 import { CATEGORIES, Category, ClothingItem } from '@/lib/types';
 
@@ -120,6 +120,19 @@ function Analysis({ clothes }: { clothes: ClothingItem[] }) {
   const [profile, setProfile] = useProfile();
   const [ai] = useAiSettings();
   const [busy, setBusy] = useState(false);
+  const [busyBuy, setBusyBuy] = useState(false);
+
+  const runBuy = async () => {
+    setBusyBuy(true);
+    try {
+      const list = await suggestPurchases(ai, clothes, profile);
+      setProfile((p) => ({ ...p, buySuggestions: list, buySuggestionsAt: new Date().toISOString() }));
+    } catch (e) {
+      Alert.alert('추천에 실패했어요', (e as Error).message);
+    } finally {
+      setBusyBuy(false);
+    }
+  };
 
   const runInsight = async () => {
     setBusy(true);
@@ -173,6 +186,37 @@ function Analysis({ clothes }: { clothes: ClothingItem[] }) {
             kind={profile.closetInsight ? 'secondary' : 'primary'}
             onPress={runInsight}
             disabled={busy}
+          />
+        )}
+      </Card>
+      <Card>
+        <SectionTitle>다음에 사면 좋을 옷</SectionTitle>
+        {profile.buySuggestions?.length ? (
+          <>
+            {profile.buySuggestions.map((s, i) => (
+              <View key={i} style={{ gap: 2 }}>
+                <ThemedText type="smallBold">
+                  {i + 1}. {s.item}
+                </ThemedText>
+                <ThemedText type="small">{s.reason}</ThemedText>
+              </View>
+            ))}
+            {profile.buySuggestionsAt && (
+              <Hint>{new Date(profile.buySuggestionsAt).toLocaleDateString('ko-KR')} 기준</Hint>
+            )}
+          </>
+        ) : (
+          <Hint>
+            지금 옷장에 하나 더하면 코디가 가장 많이 늘어나는 옷을 AI가 골라 줘요. 쇼핑 전에 확인해 보세요.
+            {isAiReady(ai) ? '' : ' "내 정보"에서 AI를 먼저 연결해 주세요.'}
+          </Hint>
+        )}
+        {isAiReady(ai) && (
+          <Button
+            title={busyBuy ? 'AI가 고르는 중...' : profile.buySuggestions?.length ? '다시 추천' : 'AI로 추천받기'}
+            kind={profile.buySuggestions?.length ? 'secondary' : 'primary'}
+            onPress={runBuy}
+            disabled={busyBuy}
           />
         )}
       </Card>
